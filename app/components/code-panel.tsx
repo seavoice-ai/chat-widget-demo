@@ -75,42 +75,64 @@ function CopyButton({ code }: { code: string }) {
   );
 }
 
-function CodeBlock({ title, code }: { title: string; code: string }) {
+/** One column: a card shell matching ChatWidget's, holding exactly one file's
+ *  code so it can sit in its own 1/3-width column and scroll independently. */
+function CodeColumn({
+  heading,
+  description,
+  filename,
+  code,
+}: {
+  heading: string;
+  description: string;
+  filename: string;
+  code: string;
+}) {
   return (
-    <div className="overflow-hidden rounded-md" style={{ background: 'var(--code-bg)' }}>
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2 text-xs text-gray-400">
-        <span className="font-mono">{title}</span>
-        <CopyButton code={code} />
+    <div
+      className="flex h-full min-h-0 flex-col rounded-lg border"
+      style={{ borderColor: 'var(--border)' }}
+    >
+      <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border)' }}>
+        <div className="font-medium">{heading}</div>
+        <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
+          {description}
+        </p>
       </div>
-      <pre className="overflow-x-auto p-3 text-xs text-gray-100">
-        <code>{code}</code>
-      </pre>
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        style={{ background: 'var(--code-bg)' }}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-3 py-2 text-xs text-gray-400">
+          <span className="font-mono">{filename}</span>
+          <CopyButton code={code} />
+        </div>
+        <pre className="min-h-0 flex-1 overflow-auto p-3 text-xs text-gray-100">
+          <code>{code}</code>
+        </pre>
+      </div>
     </div>
   );
 }
 
-export function CodePanel() {
+export function BackendCodePanel() {
   return (
-    <div
-      className="flex min-h-[32rem] flex-col gap-4 rounded-lg border p-4"
-      style={{ borderColor: 'var(--border)' }}
-    >
-      <div>
-        <div className="font-medium">The code</div>
-        <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
-          Two files: a backend route that holds your API key, and a frontend widget that talks
-          only to your own backend.
-        </p>
-      </div>
-      <div className="flex flex-1 flex-col gap-4 overflow-auto">
-        <CodeBlock title="your-backend/chat.js" code={BACKEND_SNIPPET} />
-        <CodeBlock title="your-site/chat-widget.js" code={FRONTEND_SNIPPET} />
-      </div>
-      <p className="text-xs" style={{ color: 'var(--muted)' }}>
-        Your backend needs <code>STUDIO_BASE_URL</code>, <code>STUDIO_API_KEY</code> (a workspace
-        key from Developer Settings → API Keys) and <code>STUDIO_ASSISTANT_ID</code> (this
-        agent&apos;s id). The key never reaches the browser.
-      </p>
-    </div>
+    <CodeColumn
+      heading="Your backend"
+      description="Holds your API key, forwards to Studio, streams the reply back."
+      filename="your-backend/chat.js"
+      code={BACKEND_SNIPPET}
+    />
+  );
+}
+
+export function FrontendCodePanel() {
+  return (
+    <CodeColumn
+      heading="Your frontend"
+      description="Talks only to your own backend — never to Studio directly."
+      filename="your-site/chat-widget.js"
+      code={FRONTEND_SNIPPET}
+    />
   );
 }

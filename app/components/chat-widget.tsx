@@ -74,13 +74,13 @@ export function ChatWidget() {
 
   return (
     <div
-      className="flex min-h-[32rem] flex-col rounded-lg border"
+      className="flex h-full min-h-0 flex-col rounded-lg border"
       style={{ borderColor: 'var(--border)' }}
     >
       <div className="border-b px-4 py-3 font-medium" style={{ borderColor: 'var(--border)' }}>
         Try it
       </div>
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
             Say hello to start the conversation.
