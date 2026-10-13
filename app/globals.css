@@ -1,0 +1,30 @@
+@import 'tailwindcss';
+
+:root {
+  --background: #ffffff;
+  --foreground: #111111;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --bubble-user: #111111;
+  --bubble-user-fg: #ffffff;
+  --bubble-assistant: #f3f4f6;
+  --code-bg: #0b1021;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --muted: #9ca3af;
+    --border: #2a2a2a;
+    --bubble-user: #ededed;
+    --bubble-user-fg: #0a0a0a;
+    --bubble-assistant: #1a1a1a;
+    --code-bg: #0b1021;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
