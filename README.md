@@ -11,8 +11,11 @@ The two files that matter are:
 - [`app/components/chat-widget.tsx`](./app/components/chat-widget.tsx) — your frontend. A chat
   UI built on [`@ai-sdk/react`](https://ai-sdk.dev)'s `useChat`, talking only to the route above.
 
-Everything else in this repo (layout, styling, the code panel) is just this demo page's own
-scaffolding, not part of the pattern to copy.
+Everything else in this repo (layout, styling, the code panel, `app/api/history/route.ts` +
+`lib/message-store.ts`) is just this demo page's own scaffolding, not part of the pattern to copy.
+`app/api/history` in particular exists only so reloading this page restores the conversation — it's
+an in-memory, process-local store keyed by `external_user_id`, not something a real integration
+needs (Studio's own chat API already keeps the real conversation history).
 
 ## Setup
 

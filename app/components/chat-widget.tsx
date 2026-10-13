@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 
@@ -21,6 +21,29 @@ function textOf(message: UIMessage): string {
     .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
     .map((p) => p.text)
     .join('');
+}
+
+interface StoredMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+function toUIMessage(stored: StoredMessage): UIMessage {
+  return { id: stored.id, role: stored.role, parts: [{ type: 'text', text: stored.text }] };
+}
+
+/** Demo-only: persists one message to this page's own history store (see
+ *  app/api/history/route.ts) so a reload can restore the conversation. Not
+ *  part of the integration pattern in the code panel — best-effort, fire and
+ *  forget. */
+function persistMessage(externalUserId: string, role: StoredMessage['role'], text: string) {
+  if (!text.trim()) return;
+  fetch('/api/history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ external_user_id: externalUserId, role, text }),
+  }).catch(() => {});
 }
 
 export function ChatWidget() {
@@ -57,8 +80,42 @@ export function ChatWidget() {
     [userId],
   );
 
-  const { messages, sendMessage, status, error } = useChat({ transport });
+  const { messages, setMessages, sendMessage, status, error } = useChat({ transport });
   const isLoading = status === 'submitted' || status === 'streaming';
+
+  // Reload persistence: once userId is known, fetch this page's own history
+  // for it (see app/api/history/route.ts) and hydrate the chat — otherwise a
+  // refresh shows a blank chat even though external_user_id would continue
+  // the same Studio thread on the next message.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    fetch(`/api/history?external_user_id=${encodeURIComponent(userId)}`)
+      .then((res) => (res.ok ? res.json() : { messages: [] }))
+      .then((data: { messages?: StoredMessage[] }) => {
+        if (cancelled || !data.messages?.length) return;
+        setMessages(data.messages.map(toUIMessage));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, setMessages]);
+
+  // Persist the assistant's reply once a turn finishes streaming — the
+  // server never sees the fully-assembled text in streaming mode, so the
+  // client (which does) reports it back for next time.
+  const prevStatusRef = useRef(status);
+  const lastPersistedAssistantIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const wasStreaming = prevStatusRef.current === 'submitted' || prevStatusRef.current === 'streaming';
+    prevStatusRef.current = status;
+    if (!wasStreaming || status !== 'ready' || !userId) return;
+    const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
+    if (!lastAssistantMessage || lastPersistedAssistantIdRef.current === lastAssistantMessage.id) return;
+    lastPersistedAssistantIdRef.current = lastAssistantMessage.id;
+    persistMessage(userId, 'assistant', textOf(lastAssistantMessage));
+  }, [status, messages, userId]);
 
   const [input, setInput] = useState('');
   const handleSubmit = useCallback(
@@ -67,6 +124,7 @@ export function ChatWidget() {
       const text = input.trim();
       if (!text || !userId || isLoading) return;
       setInput('');
+      persistMessage(userId, 'user', text);
       sendMessage({ text });
     },
     [input, userId, isLoading, sendMessage],
