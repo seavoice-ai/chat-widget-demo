@@ -130,13 +130,39 @@ export function ChatWidget() {
     [input, userId, isLoading, sendMessage],
   );
 
+  // A fresh external_user_id means a fresh Studio thread on the next message
+  // (resolveOrCreateThread finds nothing for the new id) — the old
+  // conversation isn't deleted, just no longer the one this tab is on.
+  const handleNewChat = useCallback(() => {
+    if (isLoading) return;
+    const created = crypto.randomUUID();
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, created);
+    setUserId(created);
+    setMessages([]);
+    setInput('');
+    prevStatusRef.current = 'ready';
+    lastPersistedAssistantIdRef.current = null;
+  }, [isLoading, setMessages]);
+
   return (
     <div
       className="flex h-full min-h-0 flex-col rounded-lg border"
       style={{ borderColor: 'var(--border)' }}
     >
-      <div className="border-b px-4 py-3 font-medium" style={{ borderColor: 'var(--border)' }}>
-        Try it
+      <div
+        className="flex items-center justify-between border-b px-4 py-3"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        <span className="font-medium">Try it</span>
+        <button
+          type="button"
+          onClick={handleNewChat}
+          disabled={!userId || isLoading}
+          className="rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          New chat
+        </button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
