@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { signStudioRequest } from '@/lib/studio-signing';
 
 /**
  * Backend for the chat widget demo.
  *
  * This is deliberately the ONLY code a customer needs to copy to stand up
- * their own chat backend: it holds the real Studio workspace API key
- * server-side and forwards the browser's message to Studio's external chat
- * API (`/api/external/{version}/chat/messages`) — the browser never sees
- * the key.
+ * their own chat backend: it holds the channel's real API secret
+ * server-side and forwards the browser's message to Studio's signed Web
+ * Chat API (`/api/external/{version}/chat/web/{channel_id}/messages`) —
+ * the browser never sees the secret.
+ *
+ * `follow_up: true` is sent on every request so this demo's own webhook
+ * receiver (app/api/webhook/route.ts) actually gets exercised — a real
+ * integration sends it only when the caller wants check-ins.
  */
 
 const STUDIO_API_VERSION = '2026-07';
@@ -46,10 +51,10 @@ function clientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const studioBaseUrl = process.env.STUDIO_BASE_URL;
-  const assistantId = process.env.STUDIO_ASSISTANT_ID;
-  const apiKey = process.env.STUDIO_API_KEY;
-  if (!studioBaseUrl || !assistantId || !apiKey) {
-    console.error('[chat-widget-demo] Missing STUDIO_BASE_URL / STUDIO_ASSISTANT_ID / STUDIO_API_KEY');
+  const channelId = process.env.STUDIO_CHANNEL_ID;
+  const apiSecret = process.env.STUDIO_API_SECRET;
+  if (!studioBaseUrl || !channelId || !apiSecret) {
+    console.error('[chat-widget-demo] Missing STUDIO_BASE_URL / STUDIO_CHANNEL_ID / STUDIO_API_SECRET');
     return NextResponse.json({ error: 'Chat demo is not configured.' }, { status: 500 });
   }
 
@@ -70,14 +75,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const { external_user_id: externalUserId, message } = parsed.data;
 
+  // The channel decides which agent answers — no assistant_id needed. Sign
+  // the EXACT string we're about to send; the body must be byte-identical
+  // to what was signed, or Studio's signature check fails.
+  const body = JSON.stringify({ external_user_id: externalUserId, follow_up: true, message });
+  const signedHeaders = signStudioRequest(apiSecret, body);
+
   let upstream: Response;
   try {
     upstream = await fetch(
-      `${studioBaseUrl}/api/external/${STUDIO_API_VERSION}/chat/messages?stream=true`,
+      `${studioBaseUrl}/api/external/${STUDIO_API_VERSION}/chat/web/${channelId}/messages?stream=true`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-        body: JSON.stringify({ assistant_id: assistantId, external_user_id: externalUserId, message }),
+        headers: { 'Content-Type': 'application/json', ...signedHeaders },
+        body,
       },
     );
   } catch (error) {

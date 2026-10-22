@@ -8,23 +8,32 @@ import { useState } from 'react';
 // Keep them in sync by hand if those files' request/response shape changes.
 
 const BACKEND_SNIPPET = `// your-backend/chat.js
-// Holds the real Studio API key — never ship this to the browser.
+// Holds the channel's API secret — never ship this to the browser.
+import crypto from "node:crypto";
+
+function signRequest(apiSecret, payload, id = crypto.randomUUID()) {
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const key = Buffer.from(apiSecret.slice("whsec_".length), "base64");
+  const sig = crypto
+    .createHmac("sha256", key)
+    .update(\`\${id}.\${ts}.\${payload}\`)
+    .digest("base64");
+  return { "webhook-id": id, "webhook-timestamp": ts, "webhook-signature": \`v1,\${sig}\` };
+}
+
 export async function POST(req) {
   const { external_user_id, message } = await req.json();
 
+  const channelId = process.env.STUDIO_CHANNEL_ID;
+  const body = JSON.stringify({ external_user_id, follow_up: true, message });
+  const signedHeaders = signRequest(process.env.STUDIO_API_SECRET, body);
+
   const reply = await fetch(
-    \`\${process.env.STUDIO_BASE_URL}/api/external/2026-07/chat/messages?stream=true\`,
+    \`\${process.env.STUDIO_BASE_URL}/api/external/2026-07/chat/web/\${channelId}/messages?stream=true\`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.STUDIO_API_KEY,
-      },
-      body: JSON.stringify({
-        assistant_id: process.env.STUDIO_ASSISTANT_ID,
-        external_user_id,
-        message,
-      }),
+      headers: { "Content-Type": "application/json", ...signedHeaders },
+      body, // must be the exact string that was signed
     }
   );
 
@@ -119,7 +128,7 @@ export function BackendCodePanel() {
   return (
     <CodeColumn
       heading="Your backend"
-      description="Holds your API key, forwards to Studio, streams the reply back."
+      description="Holds your channel's API secret, signs requests to Studio, streams the reply back."
       filename="your-backend/chat.js"
       code={BACKEND_SNIPPET}
     />
