@@ -25,7 +25,9 @@ export async function POST(req) {
   const { external_user_id, message } = await req.json();
 
   const channelId = process.env.STUDIO_CHANNEL_ID;
-  const body = JSON.stringify({ external_user_id, follow_up: true, message });
+  // Check-ins need a webhook URL on the channel — only ask if it has one.
+  const follow_up = Boolean(process.env.STUDIO_WEBHOOK_SECRET);
+  const body = JSON.stringify({ external_user_id, follow_up, message });
   const signedHeaders = signRequest(process.env.STUDIO_API_SECRET, body);
 
   const reply = await fetch(
