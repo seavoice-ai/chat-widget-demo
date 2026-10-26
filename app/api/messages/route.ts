@@ -11,9 +11,12 @@ import { signStudioRequest } from '@/lib/studio-signing';
  * Chat API (`/api/external/{version}/chat/web/{channel_id}/messages`) —
  * the browser never sees the secret.
  *
- * `follow_up: true` is sent on every request so this demo's own webhook
- * receiver (app/api/webhook/route.ts) actually gets exercised — a real
- * integration sends it only when the caller wants check-ins.
+ * `follow_up` is on whenever STUDIO_WEBHOOK_SECRET is set — Studio rejects
+ * it with a 400 unless the channel has a webhook URL, and the webhook secret
+ * only exists for a channel that has one. With it set, every request asks
+ * for check-ins so this demo's own webhook receiver
+ * (app/api/webhook/route.ts) actually gets exercised — a real integration
+ * sends it only when the caller wants check-ins.
  */
 
 const STUDIO_API_VERSION = '2026-07';
@@ -53,6 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const studioBaseUrl = process.env.STUDIO_BASE_URL;
   const channelId = process.env.STUDIO_CHANNEL_ID;
   const apiSecret = process.env.STUDIO_API_SECRET;
+  const followUp = Boolean(process.env.STUDIO_WEBHOOK_SECRET);
   if (!studioBaseUrl || !channelId || !apiSecret) {
     console.error('[chat-widget-demo] Missing STUDIO_BASE_URL / STUDIO_CHANNEL_ID / STUDIO_API_SECRET');
     return NextResponse.json({ error: 'Chat demo is not configured.' }, { status: 500 });
@@ -78,7 +82,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // The channel decides which agent answers — no assistant_id needed. Sign
   // the EXACT string we're about to send; the body must be byte-identical
   // to what was signed, or Studio's signature check fails.
-  const body = JSON.stringify({ external_user_id: externalUserId, follow_up: true, message });
+  const body = JSON.stringify({ external_user_id: externalUserId, follow_up: followUp, message });
   const signedHeaders = signStudioRequest(apiSecret, body);
 
   let upstream: Response;

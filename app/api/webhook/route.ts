@@ -8,7 +8,8 @@ import { appendMessage } from '@/lib/message-store';
  * the agent failed to answer in time (`kind: "recovered_reply"`). This is
  * the one piece of the integration pattern that ISN'T a request this demo
  * initiates: Studio calls in, unprompted, whenever the channel has a
- * webhook URL configured and the conversation turned `follow_up` on.
+ * webhook URL configured — a check-in only if the conversation also turned
+ * `follow_up` on, a late answer either way.
  *
  * Verifies the signature with the channel's webhook secret (a DIFFERENT
  * secret from the one app/api/messages/route.ts signs outbound calls
