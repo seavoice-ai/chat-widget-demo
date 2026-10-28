@@ -23,6 +23,26 @@ function textOf(message: UIMessage): string {
     .join('');
 }
 
+/** One chat bubble per step that said something — the same split Studio
+ *  stores and returns as `replies`. An agent that looks something up says so
+ *  first ("Let me check that for you"), then answers in a later step, and
+ *  both arrive in ONE streamed UI message with a `step-start` part between
+ *  them; joining every text part would run the two together. */
+function bubblesOf(message: UIMessage): string[] {
+  const bubbles: string[] = [];
+  let current = '';
+  for (const part of message.parts) {
+    if (part.type === 'step-start') {
+      if (current.trim()) bubbles.push(current);
+      current = '';
+    } else if (part.type === 'text') {
+      current += part.text;
+    }
+  }
+  if (current.trim()) bubbles.push(current);
+  return bubbles;
+}
+
 interface StoredMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -37,13 +57,16 @@ function toUIMessage(stored: StoredMessage): UIMessage {
  *  app/api/history/route.ts) so a reload can restore the conversation. Not
  *  part of the integration pattern in the code panel — best-effort, fire and
  *  forget. */
-function persistMessage(externalUserId: string, role: StoredMessage['role'], text: string) {
-  if (!text.trim()) return;
-  fetch('/api/history', {
+function persistMessage(externalUserId: string, role: StoredMessage['role'], text: string): Promise<void> {
+  if (!text.trim()) return Promise.resolve();
+  return fetch('/api/history', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ external_user_id: externalUserId, role, text }),
-  }).catch(() => {});
+  }).then(
+    () => {},
+    () => {},
+  );
 }
 
 export function ChatWidget() {
@@ -104,7 +127,8 @@ export function ChatWidget() {
 
   // Persist the assistant's reply once a turn finishes streaming — the
   // server never sees the fully-assembled text in streaming mode, so the
-  // client (which does) reports it back for next time.
+  // client (which does) reports it back for next time. One stored message
+  // per bubble, one after another so a reload shows them in order.
   const prevStatusRef = useRef(status);
   const lastPersistedAssistantIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -114,7 +138,10 @@ export function ChatWidget() {
     const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
     if (!lastAssistantMessage || lastPersistedAssistantIdRef.current === lastAssistantMessage.id) return;
     lastPersistedAssistantIdRef.current = lastAssistantMessage.id;
-    persistMessage(userId, 'assistant', textOf(lastAssistantMessage));
+    bubblesOf(lastAssistantMessage).reduce<Promise<void>>(
+      (previous, text) => previous.then(() => persistMessage(userId, 'assistant', text)),
+      Promise.resolve(),
+    );
   }, [status, messages, userId]);
 
   const [input, setInput] = useState('');
@@ -170,25 +197,27 @@ export function ChatWidget() {
             Say hello to start the conversation.
           </p>
         )}
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={
-              message.role === 'user' ? 'ml-auto max-w-[80%]' : 'mr-auto max-w-[80%]'
-            }
-          >
+        {messages.flatMap((message) =>
+          bubblesOf(message).map((text, i) => (
             <div
-              className="rounded-lg px-3 py-2 text-sm whitespace-pre-wrap"
-              style={
-                message.role === 'user'
-                  ? { background: 'var(--bubble-user)', color: 'var(--bubble-user-fg)' }
-                  : { background: 'var(--bubble-assistant)' }
+              key={`${message.id}-${i}`}
+              className={
+                message.role === 'user' ? 'ml-auto max-w-[80%]' : 'mr-auto max-w-[80%]'
               }
             >
-              {textOf(message)}
+              <div
+                className="rounded-lg px-3 py-2 text-sm whitespace-pre-wrap"
+                style={
+                  message.role === 'user'
+                    ? { background: 'var(--bubble-user)', color: 'var(--bubble-user-fg)' }
+                    : { background: 'var(--bubble-assistant)' }
+                }
+              >
+                {text}
+              </div>
             </div>
-          </div>
-        ))}
+          )),
+        )}
       </div>
       {error && (
         <p className="px-4 pb-2 text-sm text-red-500">Something went wrong — please try again.</p>

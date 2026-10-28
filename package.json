@@ -9,11 +9,11 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "ai": "^6.0.116",
+    "ai": "^7.0.153",
     "next": "16.3.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "@ai-sdk/react": "^3.0.118",
+    "@ai-sdk/react": "^4.0.157",
     "zod": "^4.3.6"
   },
   "devDependencies": {

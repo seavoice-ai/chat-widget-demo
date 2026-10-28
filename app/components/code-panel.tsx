@@ -25,9 +25,9 @@ export async function POST(req) {
   const { external_user_id, message } = await req.json();
 
   const channelId = process.env.STUDIO_CHANNEL_ID;
-  // Check-ins need a webhook URL on the channel — only ask if it has one.
-  const follow_up = Boolean(process.env.STUDIO_WEBHOOK_SECRET);
-  const body = JSON.stringify({ external_user_id, follow_up, message });
+  // For a signed-in user, you can add \`name\` and \`client_customer_id\` —
+  // from YOUR session, never from the browser's request.
+  const body = JSON.stringify({ external_user_id, message });
   const signedHeaders = signRequest(process.env.STUDIO_API_SECRET, body);
 
   const reply = await fetch(
@@ -66,7 +66,9 @@ const transport = new DefaultChatTransport({
 
 function ChatWidget() {
   const { messages, sendMessage, status } = useChat({ transport });
-  // render \`messages\`, call sendMessage({ text }) from your input box
+  // render \`messages\`, call sendMessage({ text }) from your input box.
+  // A reply can take several steps ("Let me check that…", then the
+  // answer) — start a new bubble at each "step-start" part.
 }`;
 
 function CopyButton({ code }: { code: string }) {
