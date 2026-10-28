@@ -11,12 +11,10 @@ import { signStudioRequest } from '@/lib/studio-signing';
  * Chat API (`/api/external/{version}/chat/web/{channel_id}/messages`) —
  * the browser never sees the secret.
  *
- * `follow_up` is on whenever STUDIO_WEBHOOK_SECRET is set — Studio rejects
- * it with a 400 unless the channel has a webhook URL, and the webhook secret
- * only exists for a channel that has one. With it set, every request asks
- * for check-ins so this demo's own webhook receiver
- * (app/api/webhook/route.ts) actually gets exercised — a real integration
- * sends it only when the caller wants check-ins.
+ * Nothing here turns check-ins on or off: Studio sends them to the channel's
+ * Follow-up Callback URL (app/api/callback/route.ts), when it has one, while
+ * the agent's own Enable Follow-Up setting is on. The request's old
+ * `follow_up` field is gone — Studio ignores it.
  */
 
 const STUDIO_API_VERSION = '2026-07';
@@ -56,7 +54,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const studioBaseUrl = process.env.STUDIO_BASE_URL;
   const channelId = process.env.STUDIO_CHANNEL_ID;
   const apiSecret = process.env.STUDIO_API_SECRET;
-  const followUp = Boolean(process.env.STUDIO_WEBHOOK_SECRET);
   if (!studioBaseUrl || !channelId || !apiSecret) {
     console.error('[chat-widget-demo] Missing STUDIO_BASE_URL / STUDIO_CHANNEL_ID / STUDIO_API_SECRET');
     return NextResponse.json({ error: 'Chat demo is not configured.' }, { status: 500 });
@@ -82,7 +79,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // The channel decides which agent answers — no assistant_id needed. Sign
   // the EXACT string we're about to send; the body must be byte-identical
   // to what was signed, or Studio's signature check fails.
-  const body = JSON.stringify({ external_user_id: externalUserId, follow_up: followUp, message });
+  //
+  // For a signed-in user, also send `name` (Chat Logs' Customer Name) and
+  // `client_customer_id` (links the thread to the Studio customer with that
+  // Client Customer ID, whose data then reaches the agent) — both optional,
+  // at most 200 characters. Take them from YOUR session, never from the
+  // browser's request body: a visitor who could set client_customer_id
+  // could pull another customer's data into the agent's replies. This
+  // demo's visitors are anonymous, so it sends neither.
+  const body = JSON.stringify({ external_user_id: externalUserId, message });
   const signedHeaders = signStudioRequest(apiSecret, body);
 
   let upstream: Response;

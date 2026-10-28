@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 
 /**
  * Standard Webhooks signing for Studio's signed web chat API
- * (`chat/web/{channel_id}/*`), and verification for the follow-up check-ins
- * Studio posts back to this demo's own webhook receiver. Mirrors the
+ * (`chat/web/{channel_id}/*`), and verification for the follow-ups Studio
+ * posts back to this demo's own Follow-up Callback URL. Mirrors the
  * snippets in Studio's own customer guide
  * (`docs-site/content/integrations/web-chat.mdx` in the Studio repo) — keep
  * these two functions in sync with that page if the scheme ever changes.
@@ -37,13 +37,13 @@ export function signStudioRequest(apiSecret: string, payload: string, id = crypt
   };
 }
 
-/** Verify a follow-up Studio sent FROM Studio, with the channel's webhook
- *  secret — this demo's own webhook receiver (app/api/webhook/route.ts)
+/** Verify a follow-up Studio sent FROM Studio, with the channel's callback
+ *  secret — this demo's own callback receiver (app/api/callback/route.ts)
  *  calls this before trusting a delivery. */
-export function verifyStudioWebhook(
+export function verifyStudioCallback(
   headers: { get(name: string): string | null },
   rawBody: string,
-  webhookSecret: string,
+  callbackSecret: string,
 ): boolean {
   const id = headers.get('webhook-id');
   const timestamp = headers.get('webhook-timestamp');
@@ -51,7 +51,7 @@ export function verifyStudioWebhook(
   if (!id || !timestamp || !signatures) return false;
   if (Math.abs(Date.now() / 1000 - Number(timestamp)) > MAX_SKEW_SECONDS) return false;
 
-  const key = keyFromSecret(webhookSecret);
+  const key = keyFromSecret(callbackSecret);
   const expected = Buffer.from(
     crypto.createHmac('sha256', key).update(`${id}.${timestamp}.${rawBody}`).digest('base64'),
   );
