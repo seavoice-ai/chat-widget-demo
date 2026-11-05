@@ -21,29 +21,41 @@ function signRequest(apiSecret, payload, id = crypto.randomUUID()) {
   return { "webhook-id": id, "webhook-timestamp": ts, "webhook-signature": \`v1,\${sig}\` };
 }
 
-export async function POST(req) {
-  const { external_user_id, message } = await req.json();
-
+function callStudio(payload, query = "") {
   const channelId = process.env.STUDIO_CHANNEL_ID;
-  // For a signed-in user, you can add \`name\` and \`client_customer_id\` —
-  // from YOUR session, never from the browser's request.
-  const body = JSON.stringify({ external_user_id, message });
+  const body = JSON.stringify(payload);
   const signedHeaders = signRequest(process.env.STUDIO_API_SECRET, body);
 
-  const reply = await fetch(
-    \`\${process.env.STUDIO_BASE_URL}/api/external/2026-07/chat/web/\${channelId}/messages?stream=true\`,
+  return fetch(
+    \`\${process.env.STUDIO_BASE_URL}/api/external/2026-07/chat/web/\${channelId}/messages\${query}\`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...signedHeaders },
       body, // must be the exact string that was signed
     }
   );
+}
+
+export async function POST(req) {
+  const { type, external_user_id, message } = await req.json();
+
+  // The widget just opened: get the agent's First Message, as
+  // { replies: [{ text }] } (empty if it has none). Stores nothing.
+  if (type === "first_message") {
+    const greeting = await callStudio({ type });
+    return new Response(greeting.body, { status: greeting.status });
+  }
+
+  // For a signed-in user, you can add \`name\` and \`client_customer_id\` —
+  // from YOUR session, never from the browser's request.
+  const reply = await callStudio({ external_user_id, message }, "?stream=true");
 
   // Pipe the streamed reply straight back to the browser.
   return new Response(reply.body, { status: reply.status });
 }`;
 
 const FRONTEND_SNIPPET = `// your-site/chat-widget.js
+import { useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 
@@ -65,7 +77,27 @@ const transport = new DefaultChatTransport({
 });
 
 function ChatWidget() {
-  const { messages, sendMessage, status } = useChat({ transport });
+  const { messages, setMessages, sendMessage, status } = useChat({ transport });
+
+  // Greet the visitor when the widget opens. Studio starts every new
+  // conversation with this same message, so show it. Skip this if you're
+  // restoring a conversation that's already going.
+  useEffect(() => {
+    fetch("/your-backend/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "first_message" }),
+    })
+      .then((res) => res.json())
+      .then(({ replies }) =>
+        setMessages(replies.map(({ text }, i) => ({
+          id: \`first-message-\${i}\`,
+          role: "assistant",
+          parts: [{ type: "text", text }],
+        })))
+      );
+  }, [setMessages]);
+
   // render \`messages\`, call sendMessage({ text }) from your input box.
   // A reply can take several steps ("Let me check that…", then the
   // answer) — start a new bubble at each "step-start" part.
@@ -132,7 +164,7 @@ export function BackendCodePanel() {
   return (
     <CodeColumn
       heading="Your backend"
-      description="Holds your channel's API secret, signs requests to Studio, streams the reply back."
+      description="Holds your channel's API secret, signs requests to Studio, returns the greeting and streams each reply back."
       filename="your-backend/chat.js"
       code={BACKEND_SNIPPET}
     />
@@ -143,7 +175,7 @@ export function FrontendCodePanel() {
   return (
     <CodeColumn
       heading="Your frontend"
-      description="Talks only to your own backend — never to Studio directly."
+      description="Talks only to your own backend — never to Studio directly. Asks for the greeting when it opens."
       filename="your-site/chat-widget.js"
       code={FRONTEND_SNIPPET}
     />
