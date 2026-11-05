@@ -15,6 +15,11 @@ import { signStudioRequest } from '@/lib/studio-signing';
  * Follow-up Callback URL (app/api/callback/route.ts), when it has one, while
  * the agent's own Enable Follow-Up setting is on. The request's old
  * `follow_up` field is gone — Studio ignores it.
+ *
+ * The widget also calls this route once when it opens, with
+ * `{ type: 'first_message' }`, for the agent's First Message: the greeting to
+ * show before the visitor writes. Studio answers it from the agent's published
+ * setting and stores nothing, so a visitor who never writes leaves no thread.
  */
 
 const STUDIO_API_VERSION = '2026-07';
@@ -22,10 +27,13 @@ const MAX_MESSAGE_LENGTH = 2000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
 
-const bodySchema = z.object({
-  external_user_id: z.string().min(1).max(200),
-  message: z.object({ text: z.string().min(1).max(MAX_MESSAGE_LENGTH) }),
-});
+const bodySchema = z.union([
+  z.object({ type: z.literal('first_message') }),
+  z.object({
+    external_user_id: z.string().min(1).max(200),
+    message: z.object({ text: z.string().min(1).max(MAX_MESSAGE_LENGTH) }),
+  }),
+]);
 
 // In-memory per-IP token bucket. Process-local, so it only throttles a single
 // server instance and resets on restart — acceptable for a demo, not a
@@ -74,7 +82,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
-  const { external_user_id: externalUserId, message } = parsed.data;
+  const isFirstMessage = 'type' in parsed.data;
 
   // The channel decides which agent answers — no assistant_id needed. Sign
   // the EXACT string we're about to send; the body must be byte-identical
@@ -87,13 +95,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // browser's request body: a visitor who could set client_customer_id
   // could pull another customer's data into the agent's replies. This
   // demo's visitors are anonymous, so it sends neither.
-  const body = JSON.stringify({ external_user_id: externalUserId, message });
+  const body = JSON.stringify(parsed.data);
   const signedHeaders = signStudioRequest(apiSecret, body);
 
   let upstream: Response;
   try {
     upstream = await fetch(
-      `${studioBaseUrl}/api/external/${STUDIO_API_VERSION}/chat/web/${channelId}/messages?stream=true`,
+      // The greeting is one fixed message, so there's nothing to stream.
+      `${studioBaseUrl}/api/external/${STUDIO_API_VERSION}/chat/web/${channelId}/messages${isFirstMessage ? '' : '?stream=true'}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...signedHeaders },
@@ -109,6 +118,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.error('[chat-widget-demo] Studio returned an error, status', upstream.status);
     return NextResponse.json({ error: 'The chat service returned an error — please try again.' }, { status: 502 });
   }
+
+  // `{ replies: [{ text }], reply: { text } }`, with `replies` empty when the
+  // agent has no First Message.
+  if (isFirstMessage) return NextResponse.json(await upstream.json());
 
   return new NextResponse(upstream.body, { status: upstream.status, headers: upstream.headers });
 }

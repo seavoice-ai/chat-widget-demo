@@ -21,6 +21,7 @@ It runs in one of two modes, picked by whether the Studio channel has a **Follow
 | **Routes you build** | `/api/messages` | `/api/messages` + `/api/callback` |
 | **Server must be publicly reachable** | No — `localhost` is fine | Yes — Studio has to reach the callback URL (use a tunnel when running locally) |
 | **Streamed replies** | Yes | Yes |
+| **Greeting when the chat opens** (the agent's **First Message**) | Yes | Yes |
 | **Studio continues the user's open conversation** (keyed by `external_user_id`) | Yes | Yes |
 | **"Still there?" check-in when the user goes quiet** (`follow_up`) | No | Yes, while the agent's **Enable Follow-Up** setting is on |
 | **Late answer when the agent fails to reply** (`recovered_reply`) | No — Studio doesn't retry, so the user has to send again | Yes — Studio re-runs the turn and delivers the answer, whether or not Enable Follow-Up is on |
@@ -37,10 +38,11 @@ sent.
 
 - [`app/api/messages/route.ts`](./app/api/messages/route.ts) — your backend, **both modes**. Holds
   your chat channel's API secret server-side, signs each request, and forwards it to Studio's
-  signed chat API, streaming the reply back. The browser never sees the secret.
+  signed chat API, returning the agent's greeting and streaming each reply back. The browser never
+  sees the secret.
 - [`app/components/chat-widget.tsx`](./app/components/chat-widget.tsx) — your frontend, **both
   modes**. A chat UI built on [`@ai-sdk/react`](https://ai-sdk.dev)'s `useChat`, talking only to
-  the route above.
+  the route above. Opens with the agent's First Message.
 - [`lib/studio-signing.ts`](./lib/studio-signing.ts) — the Standard Webhooks helpers: signing
   requests to Studio (**both modes**) and verifying deliveries from Studio (**callback mode**).
 - [`app/api/callback/route.ts`](./app/api/callback/route.ts) — your receiver, **callback mode
@@ -65,15 +67,18 @@ cp .env.example .env.local
    - **Callback mode:** set **Follow-up Callback URL** to `{your demo's public base URL}/api/callback`.
      Studio has to reach it, so when running locally, expose port 3000 through a tunnel (e.g.
      `ngrok http 3000`) and use that URL — `http://localhost:3000/api/callback` only works if
-     Studio itself runs on your machine. Then turn on **Enable Follow-Up** in the agent's
-     settings if you want check-ins (**Idle timeout** and **Idle Retries** set when and how
-     often they're sent).
+     Studio itself runs on your machine. If you want check-ins, make sure **Enable Follow-Up** is
+     on in the agent builder's **Chat** tab, under **Chat Settings** (**Idle timeout (min)** and
+     **Idle Retries** set when and how often they're sent).
 2. Copy the **API secret** and — in callback mode — the **Callback secret** from the dialog Studio
    shows after Create. Each secret is shown only once (the actions menu can regenerate either).
    The dialog's **Webhook URL** is Studio's own endpoint for this channel — what
    `app/api/messages/route.ts` calls — not your callback URL. Copy the channel id from the
    table's **Channel ID** column.
-3. Fill in `.env.local`:
+3. To have the agent greet visitors, write a **First Message** in the agent builder's **Chat** tab,
+   under **Event Messages**, and publish. It's plain text, shown exactly as written. Leave it blank
+   for no greeting.
+4. Fill in `.env.local`:
 
 | Variable | What it is |
 |---|---|
@@ -108,7 +113,33 @@ request, and maps any upstream failure to a generic error — adapt those to you
 conventions, but keep the core shape: **your backend holds the channel's secrets, your frontend
 only talks to your backend.**
 
-The request body Studio takes:
+When the widget opens, the same route gets the agent's **First Message** — the greeting shown before
+the visitor writes:
+
+```
+Browser (this page)
+  -> POST /api/messages { type: "first_message" }
+      -> POST {STUDIO_BASE_URL}/api/external/2026-07/chat/web/{channel_id}/messages
+         { "type": "first_message" }                 (signed like any message)
+      <- { replies: [{ text }], reply: { text } }
+  <- the same
+```
+
+- `replies` is empty when the agent has no First Message, and the widget opens with nothing, as it
+  would without this call.
+- Studio stores nothing and runs no model for this call, so a visitor who never writes leaves no
+  thread or Chat Logs row. Every other field sent with it is ignored, there's no `thread_id` or
+  message `id` in the answer, and repeating it never gets a `409`.
+- It can also stream: with `?stream=true`, the greeting comes back as one step, the same as a reply.
+  This demo uses the JSON answer because a single fixed message has nothing to stream.
+
+When the visitor sends their first message, Studio starts the new conversation with the First
+Message as the agent's first message, whether or not your widget showed it. Chat Logs shows it, and
+the agent believes it has already said hello. So show it, or leave it blank. A conversation that's
+already going is different: Studio's thread doesn't contain a new greeting, so restore its history
+instead of asking again, as this widget does on a reload.
+
+The request body Studio takes for a message:
 
 | Field | |
 |---|---|
